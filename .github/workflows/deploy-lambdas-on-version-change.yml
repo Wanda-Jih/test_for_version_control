@@ -26,7 +26,13 @@ jobs:
 
       - name: Extract version.json (before & after)
         run: |
-          git show ${{ github.event.pull_request.base.sha }}:version.json > before.json
+          if git show ${{ github.event.pull_request.base.sha }}:version.json > before.json 2>/dev/null; then
+            echo "Found version.json in base commit"
+          else
+            echo "version.json not found in base commit — treating as empty"
+            echo '{}' > before.json
+          fi
+      
           git show ${{ github.event.pull_request.merge_commit_sha }}:version.json > after.json
 
       - name: Compute deploy plan
