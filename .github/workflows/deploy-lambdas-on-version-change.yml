@@ -38,17 +38,16 @@ jobs:
       - name: Compute deploy plan
         run: |
           echo "==== Lambda Deploy Plan ===="
-
+      
           jq -n \
-            --argfile before before.json \
-            --argfile after after.json '
-            reduce ($after | keys[]) as $env ([]; 
+            --slurpfile before before.json \
+            --slurpfile after after.json '
+            reduce ($after[0] | keys[]) as $env ([]; 
               (
-                if $before[$env].base != $after[$env].base then
+                if ($before[0][$env].base // null) != ($after[0][$env].base // null) then
                   . + [{
                     env: $env,
-                    type: "base",
-                    detail: "base version changed → deploy ALL lambdas"
+                    type: "base"
                   }]
                 else
                   .
@@ -56,28 +55,29 @@ jobs:
               ) +
               (
                 reduce (
-                  ($after[$env].extra | keys_unsorted[])
+                  ($after[0][$env].extra // {} | keys_unsorted[])
                 ) as $lambda ([]; 
-                  if $before[$env].extra[$lambda] != $after[$env].extra[$lambda]
+                  if ($before[0][$env].extra[$lambda] // null)
+                     != ($after[0][$env].extra[$lambda] // null)
                   then . + [{
                     env: $env,
                     type: "lambda",
                     lambda: $lambda,
-                    version: $after[$env].extra[$lambda]
+                    version: $after[0][$env].extra[$lambda]
                   }]
                   else .
                   end
                 )
               )
             )
-          ' | jq -r '
-            if length == 0 then
-              "No lambda deployments required."
-            else
-              .[] |
-              if .type == "base" then
-                "- env: \(.env)\n  - base changed → deploy ALL lambdas"
+            ' | jq -r '
+              if length == 0 then
+                "No lambda deployments required."
               else
-                "- env: \(.env)\n  - lambda: \(.lambda) (version: \(.version))"
-              end
-            '
+                .[] |
+                if .type == "base" then
+                  "- env: \(.env)\n  - base changed → deploy ALL lambdas"
+                else
+                  "- env: \(.env)\n  - lambda: \(.lambda) (version: \(.version))"
+                end
+              '
