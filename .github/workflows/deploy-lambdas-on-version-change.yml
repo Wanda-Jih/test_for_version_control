@@ -1,0 +1,77 @@
+name: Deploy Lambdas (diff-based)
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+    paths:
+      - version.json
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install jq
+        run: sudo apt-get install -y jq
+
+      - name: Extract version.json (before & after)
+        run: |
+          git show ${{ github.event.pull_request.base.sha }}:version.json > before.json
+          git show ${{ github.event.pull_request.merge_commit_sha }}:version.json > after.json
+
+      - name: Compute deploy plan
+        run: |
+          echo "==== Lambda Deploy Plan ===="
+
+          jq -n \
+            --argfile before before.json \
+            --argfile after after.json '
+            reduce ($after | keys[]) as $env ([]; 
+              (
+                if $before[$env].base != $after[$env].base then
+                  . + [{
+                    env: $env,
+                    type: "base",
+                    detail: "base version changed → deploy ALL lambdas"
+                  }]
+                else
+                  .
+                end
+              ) +
+              (
+                reduce (
+                  ($after[$env].extra | keys_unsorted[])
+                ) as $lambda ([]; 
+                  if $before[$env].extra[$lambda] != $after[$env].extra[$lambda]
+                  then . + [{
+                    env: $env,
+                    type: "lambda",
+                    lambda: $lambda,
+                    version: $after[$env].extra[$lambda]
+                  }]
+                  else .
+                  end
+                )
+              )
+            )
+          ' | jq -r '
+            if length == 0 then
+              "No lambda deployments required."
+            else
+              .[] |
+              if .type == "base" then
+                "- env: \(.env)\n  - base changed → deploy ALL lambdas"
+              else
+                "- env: \(.env)\n  - lambda: \(.lambda) (version: \(.version))"
+              end
+            '

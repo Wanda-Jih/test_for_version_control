@@ -1,0 +1,21 @@
+{
+  "dev": {
+    "base": "v1.0.0",
+    "extra": {
+      "trending-api": "v0.1.2",
+      "analytics-hub-api": "v0.1.5"
+    }
+  },
+  "dev2": {
+    "base": "v1.0.0",
+    "extra": {}
+  },
+  "uat": {
+    "base": "v1.0.0",
+    "extra": {}
+  },
+  "prod": {
+    "base": "v1.0.0",
+    "extra": {}
+  }
+}
