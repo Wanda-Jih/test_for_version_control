@@ -1,4 +1,4 @@
-name: Deploy Lambdas (diff-based)
+name: Deploy Lambda Functions based on Version Changes
 
 on:
   pull_request:
@@ -11,12 +11,12 @@ permissions:
   contents: read
 
 jobs:
-  plan:
+  diff:
     if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repo
+      - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -24,60 +24,52 @@ jobs:
       - name: Install jq
         run: sudo apt-get install -y jq
 
-      - name: Extract version.json (before & after)
+      - name: Load version.json before & after
         run: |
           if git show ${{ github.event.pull_request.base.sha }}:version.json > before.json 2>/dev/null; then
             echo "Found version.json in base commit"
           else
-            echo "version.json not found in base commit — treating as empty"
+            echo "version.json not found in base commit, using empty object"
             echo '{}' > before.json
           fi
-      
+
           git show ${{ github.event.pull_request.merge_commit_sha }}:version.json > after.json
 
-      - name: Compute deploy plan
+      - name: Print changes
         run: |
-          echo "==== Lambda Deploy Plan ===="
-      
-          jq -n \
-            --slurpfile before before.json \
-            --slurpfile after after.json '
-            reduce ($after[0] | keys[]) as $env ([]; 
-              (
-                if ($before[0][$env].base // null) != ($after[0][$env].base // null) then
-                  . + [{
-                    env: $env,
-                    type: "base"
-                  }]
-                else
-                  .
-                end
-              ) +
-              (
-                reduce (
-                  ($after[0][$env].extra // {} | keys_unsorted[])
-                ) as $lambda ([]; 
-                  if ($before[0][$env].extra[$lambda] // null)
-                     != ($after[0][$env].extra[$lambda] // null)
-                  then . + [{
-                    env: $env,
-                    type: "lambda",
-                    lambda: $lambda,
-                    version: $after[0][$env].extra[$lambda]
-                  }]
+          echo "==== version.json changes ===="
+
+          CHANGES=$(
+            jq -n \
+              --slurpfile before before.json \
+              --slurpfile after after.json '
+              reduce ($after[0] | keys[]) as $env ([]; 
+                (
+                  if ($before[0][$env].base // null)
+                     != ($after[0][$env].base // null)
+                  then
+                    . + ["env=\($env): base"]
                   else .
                   end
+                ) +
+                (
+                  reduce (
+                    ($after[0][$env].extra // {} | keys_unsorted[])
+                  ) as $lambda ([]; 
+                    if ($before[0][$env].extra[$lambda] // null)
+                       != ($after[0][$env].extra[$lambda] // null)
+                    then
+                      . + ["env=\($env): lambda=\($lambda)"]
+                    else .
+                    end
+                  )
                 )
               )
-            )
-            ' | jq -r '
-              if length == 0 then
-                "No lambda deployments required."
-              else
-                .[] |
-                if .type == "base" then
-                  "- env: \(.env)\n  - base changed → deploy ALL lambdas"
-                else
-                  "- env: \(.env)\n  - lambda: \(.lambda) (version: \(.version))"
-                end
-              '
+            '
+          )
+
+          if [ "$CHANGES" = "[]" ]; then
+            echo "No change"
+          else
+            echo "$CHANGES" | jq -r '.[]'
+          fi
