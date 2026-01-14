@@ -1,0 +1,28 @@
+name: Validate PR Branch Name
+
+on:
+  pull_request:
+    branches:
+      - main
+    types: [opened, synchronize, reopened]
+
+jobs:
+  validate-branch-name:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check branch naming convention
+        run: |
+          BRANCH_NAME="${{ github.head_ref }}"
+          echo "PR branch: $BRANCH_NAME"
+
+          if [[ "$BRANCH_NAME" =~ ^(majorchange|minorchange|bugfix)/.+ ]]; then
+            echo "✅ Branch name is valid"
+          else
+            echo "❌ Invalid branch name"
+            echo "Branch must start with one of:"
+            echo "  - majorchange/"
+            echo "  - minorchange/"
+            echo "  - bugfix/"
+            exit 1
+          fi
