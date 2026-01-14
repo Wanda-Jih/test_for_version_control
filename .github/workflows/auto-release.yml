@@ -1,0 +1,82 @@
+name: Auto Release
+
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - main
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  release:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get latest tag
+        id: latest
+        run: |
+          git fetch --tags
+          TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+
+      - name: Decide version bump from branch name
+        id: bump
+        run: |
+          BRANCH="${{ github.event.pull_request.head.ref }}"
+
+          if [[ "$BRANCH" == majorchange/* ]]; then
+            echo "type=major" >> $GITHUB_OUTPUT
+          elif [[ "$BRANCH" == minorchange/* ]]; then
+            echo "type=minor" >> $GITHUB_OUTPUT
+          elif [[ "$BRANCH" == bugfix/* ]]; then
+            echo "type=patch" >> $GITHUB_OUTPUT
+          else
+            echo "type=none" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Calculate next version
+        id: version
+        run: |
+          VERSION=${{ steps.latest.outputs.tag }}
+          VERSION=${VERSION#v}
+
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
+
+          case "${{ steps.bump.outputs.type }}" in
+            major)
+              MAJOR=$((MAJOR+1)); MINOR=0; PATCH=0 ;;
+            minor)
+              MINOR=$((MINOR+1)); PATCH=0 ;;
+            patch)
+              PATCH=$((PATCH+1)) ;;
+            *)
+              echo "No version bump"
+              exit 0 ;;
+          esac
+
+          echo "version=v$MAJOR.$MINOR.$PATCH" >> $GITHUB_OUTPUT
+
+      - name: Create tag
+        run: |
+          git tag ${{ steps.version.outputs.version }}
+          git push origin ${{ steps.version.outputs.version }}
+
+      - name: Create release using PR description
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: Release ${{ steps.version.outputs.version }}
+          body: |
+            ## Changes
+            **PR:** #${{ github.event.pull_request.number }}
+            **Title:** ${{ github.event.pull_request.title }}
+
+            ${{ github.event.pull_request.body }}
