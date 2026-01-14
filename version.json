@@ -1,6 +1,6 @@
 {
   "dev": {
-    "base": "v1.1.2",
+    "base": "v1.1.0",
     "extra": {
       "trending-api": "v1.0.0",
       "analytics-hub-api": "v1.0.0"
